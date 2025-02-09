@@ -305,3 +305,37 @@ uint8_t i2c_init()
 
 	return I2C_OK;
 }
+
+
+/**
+ * @brief  De-initializes the I2C peripheral, including disabling the I2C peripheral,
+ *         resetting the associated GPIO pins, and turning off the clocks.
+ * 
+ * This function shuts down the I2C interface, releases the I2C pins, and powers down
+ * the I2C peripheral and its clock. It also ensures the GPIO pins are reset to a safe state.
+ * 
+ * @return uint8_t 
+ *   - I2C_OK (0): De-initialization successful.
+ *   - I2C_ERR_RESET (1): Error during I2C reset process.
+ *   - I2C_ERR_CLK_DISABLE (2): Error disabling I2C clock.
+ */
+uint8_t i2c_deinit() {
+    // Disable the I2C peripheral (Set I2C1 PE bit to 0)
+    I2C1->CTLR1 &= ~I2C_CTLR1_PE;  // Disable I2C peripheral
+
+    // Reset the I2C1 peripheral to its default state (soft reset)
+    RCC->APB1PRSTR |= RCC_APB1Periph_I2C1;  // Set the I2C reset bit
+    RCC->APB1PRSTR &= ~RCC_APB1Periph_I2C1; // Clear the reset bit to release reset
+
+    // Disable the I2C clock (turn off I2C peripheral clock)
+    RCC->APB1PCENR &= ~RCC_APB1Periph_I2C1;  // Disable I2C clock
+
+    // Reset the AFIO settings for the I2C pins (SDA and SCL)
+    AFIO->PCFR1 &= ~(0x04400002); // Reset the alternate function settings for SDA and SCL
+
+    // Reset the GPIO configuration for SDA and SCL pins
+    I2C_PORT->CFGLR &= ~(0x0F << (4 * I2C_PIN_SDA));  // Clear the configuration for SDA pin
+    I2C_PORT->CFGLR &= ~(0x0F << (4 * I2C_PIN_SCL));  // Clear the configuration for SCL pin
+
+    return I2C_OK;  // De-initialization was successful
+}

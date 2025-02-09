@@ -67,14 +67,15 @@
 #define I2C_ERR_BERR     5   // I2C bus error
 
 // I2C Timeout and Configuration
-#define I2C_TIMEOUT      3000
+#define I2C_TIMEOUT      300
 #define I2C_CLK_FREQ     0x08 // 8MHz I2C module CLK (set in MHz)
 
 // I2C function prototypes
 uint8_t i2c_init(void);
-uint8_t i2c_begin_transmission(uint8_t addr, uint8_t mode);
-void i2c_end_transmission(void);
+uint8_t i2c_begin_transmisison(uint8_t addr, uint8_t mode);
+void i2c_end_transmisison();
 uint8_t i2c_transmit_data(uint8_t *data, uint16_t length);
 uint8_t i2c_receive_data(uint8_t *data, uint16_t length);
+uint8_t i2c_deinit();
 
 #endif // I2C_H
