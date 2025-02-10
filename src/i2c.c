@@ -334,8 +334,8 @@ uint8_t i2c_deinit() {
     AFIO->PCFR1 &= ~(0x04400002); // Reset the alternate function settings for SDA and SCL
 
     // Reset the GPIO configuration for SDA and SCL pins
-    I2C_PORT->CFGLR &= ~(0x0F << (4 * I2C_PIN_SDA));  // Clear the configuration for SDA pin
-    I2C_PORT->CFGLR &= ~(0x0F << (4 * I2C_PIN_SCL));  // Clear the configuration for SCL pin
+    I2C_PORT->CFGLR &= ~(GPIO_CNF_IN_PUPD<< (4 * I2C_PIN_SDA));  // Clear the configuration for SDA pin
+    I2C_PORT->CFGLR &= ~(GPIO_CNF_IN_PUPD << (4 * I2C_PIN_SCL));  // Clear the configuration for SCL pin
 
     return I2C_OK;  // De-initialization was successful
 }

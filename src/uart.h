@@ -24,9 +24,15 @@ void USART1_IRQHandler(void)
 			// Read from the DATAR Register to reset the flag
 			char received = (char)USART1->DATAR;
 			if(received == '\n' || received == '\r') {
-				command[command_index] = 0; //replace newline with end of string
-				command_index = 0;
-				command_received = 1;
+				if(command_index > 0) {
+					command[command_index] = 0; //replace newline with end of string
+					command_index = 0;
+					command_received = 1;
+				}
+
+				else {
+					command_index = 0;
+				}
 			}
 			else {
 				command[command_index] = received;
@@ -90,4 +96,27 @@ void uart_send(uint8_t *data, uint16_t length) {
 
 void uart_print(char *str) {
 	uart_send(str, strlen(str));
+}
+
+void uart_deinit() {
+    // Disable the UART (USART1)
+    USART1->CTLR1 &= ~USART_CTLR1_UE;  // Clear the UE (USART Enable) bit
+
+    // Disable the UART RXNE interrupt (USART1_IRQn)
+    NVIC_DisableIRQ(USART1_IRQn);
+
+    // Reset the UART control registers (Optional, depending on the use case)
+    USART1->CTLR1 &= ~ (USART_Mode_Tx | USART_Mode_Rx | USART_CTLR1_RXNEIE); // Clear TX, RX, and RXNEIE bits
+    USART1->CTLR2 &= 0x00;  // Clear CTLR2 register (Stop bits)
+    USART1->CTLR3 &= 0x00;  // Clear CTLR3 register (Flow control)
+
+    // Reset the UART baud rate (optional, but ensures the value is cleared)
+    USART1->BRR = 0x00;
+
+    // De-initialize the GPIOs (assuming you want to reset the pins)
+    funPinMode(PD5, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);  // Set TX pin to default mode (output push-pull)
+    funPinMode(PD6, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);  // Set RX pin to default mode (floating input)
+
+    // Disable the UART clock
+    RCC->APB2PCENR &= ~RCC_APB2Periph_USART1;  // Disable the UART1 clock
 }
