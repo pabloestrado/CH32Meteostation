@@ -11,7 +11,6 @@ volatile uint8_t command_received = 0;
 void USART1_IRQHandler(void) __attribute__((interrupt));
 void USART1_IRQHandler(void)
 {
-
 	if(USART1->STATR & USART_STATR_RXNE)
 	{
 		//Check for errors (overrun, framing, noise)
@@ -23,6 +22,7 @@ void USART1_IRQHandler(void)
 		else {
 			// Read from the DATAR Register to reset the flag
 			char received = (char)USART1->DATAR;
+
 			if(received == '\n' || received == '\r') {
 				if(command_index > 0) {
 					command[command_index] = 0; //replace newline with end of string
@@ -35,6 +35,11 @@ void USART1_IRQHandler(void)
 				}
 			}
 			else {
+	            // Exclude non-ASCII characters (characters < 0x20 or > 0x7E)
+				if (received < 0x20 || received > 0x7E) 
+				{
+					return; // Ignore non-ASCII characters
+				}
 				command[command_index] = received;
 				if(command_index >= (sizeof(command) - 1)) {
 					command_index = 0;
@@ -80,11 +85,13 @@ void uart_init() {
 	// Set the Baudrate, assuming 48KHz
 	USART1->BRR = (FUNCONF_SYSTEM_CORE_CLOCK / (UART_BAUDRATE * 16)) << 4;
 
+	//USART1->STATR = 0x00;
 	// Enable the UART RXNE Interrupt
     NVIC_EnableIRQ(USART1_IRQn);
 	
 	// Enable the UART
 	USART1->CTLR1 |= USART_CTLR1_UE;
+	printf("INITUART STAT: 0x%x CTLR1 0x%x\n", USART1->STATR, USART1->CTLR1);
 }
 
 void uart_send(uint8_t *data, uint16_t length) {
@@ -114,8 +121,8 @@ void uart_deinit() {
     USART1->BRR = 0x00;
 
     // De-initialize the GPIOs (assuming you want to reset the pins)
-    funPinMode(PD5, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);  // Set TX pin to default mode (output push-pull)
-    funPinMode(PD6, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);  // Set RX pin to default mode (floating input)
+    funPinMode(PD5, GPIO_Speed_2MHz | GPIO_CNF_IN_PUPD);
+    funPinMode(PD6, GPIO_Speed_2MHz | GPIO_CNF_IN_PUPD);  
 
     // Disable the UART clock
     RCC->APB2PCENR &= ~RCC_APB2Periph_USART1;  // Disable the UART1 clock

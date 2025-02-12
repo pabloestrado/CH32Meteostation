@@ -18,11 +18,11 @@
 #define SCREEN_DELAY 3000 // Timeout before dimm screen
 #define COMM_DELAY 10000	//Max time for UART communitation before sleep
 
-#define SCREEN_GND_PIN PC6
-#define SENSOR_GND_PIN PC7
+#define I2C_GND_PIN PC6
 #define I2C_VCC_PIN PC4
 #define WAKEUP_PIN PA1
 #define BAT_ADC_PIN ANALOG_0
+#define JDY23_PWRC_PIN PC0
 
 // Preshared key for BLE auth
 #define AUTH_PSK "123"
@@ -106,18 +106,17 @@ int vbat_to_percentage(int vbat_mv) {
 }
 
 uint8_t measure() {
-	funDigitalWrite(SENSOR_GND_PIN, 0);
 	// Sensors requires 80ms+ to start
 	Delay_Ms(100);
 	uint8_t bmp280_errno = BMP280_read(&bmp280_data);
 	Delay_Ms(5); // We need it, for some reason BMP not worjing without small delay
 	uint8_t aht20_errno = AHT20_read(&aht20_data);
-	funDigitalWrite(SENSOR_GND_PIN, 1);
-	
+
 	funPinMode(PA2, GPIO_CNF_IN_ANALOG);
 	volatile uint16_t vref = funAnalogRead(ANALOG_8);
     volatile uint16_t vbat = funAnalogRead(BAT_ADC_PIN);
     volatile uint16_t vbat_mv = (1200 *vbat) / vref; // Battery voltage in milivolts
+	printf("vbat %d mv %d\r\n", vbat, vbat_mv);
 	funPinMode(PA2, GPIO_CNF_IN_PUPD);
 	battery_level = vbat_to_percentage(vbat_mv);
 
@@ -172,9 +171,25 @@ uint8_t process_command(char *command) {
 void EXTI7_0_IRQHandler( void ) __attribute__((interrupt));
 void EXTI7_0_IRQHandler( void ) 
 {
+	SystemInit();
     if ((EXTI->INTFR & EXTI_Line1)) {
         EXTI->INTFR |= EXTI_Line1;
+		printf("Exti line 1\n");
     }
+	else {
+		printf("Exti other\n");
+	}
+}
+
+void btinit() {
+
+}
+
+void disconnect() {
+	funDigitalWrite(JDY23_PWRC_PIN, 0);
+	Delay_Ms(20);
+	uart_print("AT+DISC\r\n");
+	funDigitalWrite(JDY23_PWRC_PIN, 1);
 }
 
 void init() {
@@ -188,7 +203,6 @@ void init() {
 	//GPIOA: Set to output
 	GPIOA->CFGLR = (GPIO_CNF_IN_PUPD<<(4*2)) |
 				   (GPIO_CNF_IN_PUPD<<(4*1));
-	GPIOA->BSHR = GPIO_BSHR_BS2 | GPIO_BSHR_BR1;
 	// GPIOC: Set to input with mixed pull-up / pull-down
 	GPIOC->CFGLR = (GPIO_CNF_IN_PUPD<<(4*7)) |
 				   (GPIO_CNF_IN_PUPD<<(4*6)) |
@@ -198,14 +212,6 @@ void init() {
 				   (GPIO_CNF_IN_PUPD<<(4*2)) |
 				   (GPIO_CNF_IN_PUPD<<(4*1)) |
 				   (GPIO_CNF_IN_PUPD<<(4*0));
-	GPIOC->BSHR = GPIO_BSHR_BS7 |
-				  GPIO_BSHR_BR6 |
-				  GPIO_BSHR_BS5 |
-				  GPIO_BSHR_BR4 |
-				  GPIO_BSHR_BS3 |
-				  GPIO_BSHR_BR2 |
-				  GPIO_BSHR_BS1 |
-				  GPIO_BSHR_BR0;
 	// GPIOD: D2 set to input pull-up
 	GPIOD->CFGLR = (GPIO_CNF_IN_PUPD<<(4*7)) |
 				   (GPIO_CNF_IN_PUPD<<(4*6)) |
@@ -215,22 +221,16 @@ void init() {
 				   (GPIO_CNF_IN_PUPD<<(4*2)) |
 				   (GPIO_CNF_IN_FLOATING<<(4*1)) |
 				   (GPIO_CNF_IN_PUPD<<(4*0));
-	// GPIOD->BSHR = GPIO_BSHR_BR7 |
-	// 			  GPIO_BSHR_BS6 |
-	// 			  GPIO_BSHR_BR5 |
-	// 			  GPIO_BSHR_BS4 |
-	// 			  GPIO_BSHR_BR3 |
-	// 			  GPIO_BSHR_BS2 |
-	// 			  GPIO_BSHR_BR0;
 
 
-	funPinMode(SCREEN_GND_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_OD);
-	funPinMode(SENSOR_GND_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_OD);
+	funPinMode(I2C_GND_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_OD);
 	funPinMode(I2C_VCC_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);
 	funPinMode(WAKEUP_PIN, GPIO_CFGLR_IN_PUPD);
-	
+	funPinMode(JDY23_PWRC_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_OD);
 	// Supply i2c power
 	funDigitalWrite(I2C_VCC_PIN, 1);
+
+	funDigitalWrite(JDY23_PWRC_PIN,1);
 
 	// PA1 interupt wakeup
 	AFIO->EXTICR |= AFIO_EXTICR_EXTI1_PA;
@@ -255,13 +255,38 @@ void init() {
 	// Reset SysTick
 	SysTick->CNT = 0;
 
-	Delay_Ms(50);
-	ssd1306_init();
-
 	authorized = 0;
+
+	uart_print("+MCUREADY\r\n");
+
+	// Sink power for screen and sensor GND
+	funDigitalWrite(I2C_GND_PIN, 0);
+
+	Delay_Ms(50);
+
+	//ssd1306 deinit
+	i2c_begin_transmisison(SSD1306_I2C_ADDR, I2C_MODE_WRITE);
+	uint8_t ssd1306_deinit_cmd[] = {
+		SSD1306_DISPLAYOFF
+	};
+	i2c_transmit_data(ssd1306_deinit_cmd, sizeof(ssd1306_deinit_cmd));
+	i2c_end_transmisison();
+	ssd1306_init();
 }
 
 void deinit() {
+
+	// // deinit display
+
+	ssd1306_setbuf(0);
+	ssd1306_refresh();
+	// i2c_begin_transmisison(SSD1306_I2C_ADDR, I2C_MODE_WRITE);
+	// uint8_t ssd1306_deinit_cmd[] = {
+	// 	SSD1306_DISPLAYOFF
+	// };
+	// i2c_transmit_data(ssd1306_deinit_cmd, sizeof(ssd1306_deinit_cmd));
+	// i2c_end_transmisison();
+
 	i2c_deinit();
 	uart_deinit();
 
@@ -270,27 +295,52 @@ void deinit() {
     RCC->APB2PRSTR |= RCC_APB2Periph_ADC1;
 
 	funDigitalWrite(I2C_VCC_PIN, 0);
-	funPinMode(SCREEN_GND_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);
-	funPinMode(SENSOR_GND_PIN, GPIO_Speed_2MHz | GPIO_CNF_OUT_PP);
+	funPinMode(I2C_VCC_PIN, GPIO_CNF_IN_PUPD);
+	funPinMode(I2C_GND_PIN, GPIO_CNF_IN_PUPD);
 
 	//power off SCL
 	// funPinMode(PC1, GPIO_CNF_OUT_OD);
 	// funPinMode(PC1, GPIO_CNF_OUT_OD);
-
-
 	funPinMode(PD1, GPIO_CNF_IN_PUPD); // disable floating in SWIO pin for power eficiency
+	
+	//funPinMode(JDY23_PWRC_PIN, GPIO_CNF_IN_PUPD);
 }
 
+
+void drawBluetoothLogo() {
+  	// Draw the vertical central line
+	ssd1306_drawLine(64, 6, 64, 26, 1);
+	ssd1306_drawLine(64, 26, 71, 19, 1);
+	ssd1306_drawLine(64, 6, 71, 11, 1);
+	ssd1306_drawLine(62, 14, 71, 19, 1);
+	ssd1306_drawLine(62, 18, 71, 11, 1);
+}
 
 
 void deepsleep() {
+	printf("Sleep\n");
 	uart_print("+SLEEP\r\n");
+	disconnect();
 	deinit();
-	Delay_Ms(1); // Give a chance to deliver DATA byte
+	Delay_Ms(1); // Give a chance to deliver last DATA byte
 	__WFI();
 	SystemInit();
 	init();
+	uart_print("+WAKEUP\r\n");
+	printf("Wake up\n");
+	Delay_Ms(50);
+
+
+	printf("Before draw\n");
+	
+	drawBluetoothLogo();
+
+	printf("Before refresh\n");
+	ssd1306_refresh();
+
+	printf("end init\n");
 }
+
 
 int main()
 {
@@ -298,16 +348,6 @@ int main()
 	SystemInit();
 	init();
 
-	uart_print("+MCUREADY\r\n");
-	
-	// Sink power for screen and sensor GND
-	funDigitalWrite(SCREEN_GND_PIN, 0);
-
-	// Give screen  to warmup from cold start
-	Delay_Ms(100);
-
-	// Draw sandclock until no results are fetched
-	//ssd1306_init(); // init twice - dirty hack to avoid problem wen display is not starting after ground loss
 	drawClock();
 
 	measure();
@@ -315,28 +355,47 @@ int main()
 	
 	while(millis() <= SCREEN_DELAY) {
 		if(is_command_received()) {
-			printf("Command: %s\n", get_command());
+			printf("Cmd: %s\n", get_command());
+
+			int i = 0;
+			while(command[i] != 0) {
+				printf("0x%x %c\n", command[i], command[i]);
+				i++;
+			}
+
 			process_command(get_command());
 		}
 	}
 
 	ssd1306_setbuf(0);
 	ssd1306_refresh();
-	funDigitalWrite(SCREEN_GND_PIN, 1);
+	
 
-	uart_print("+SLEEP\r\n");
+
+	funDigitalWrite(I2C_GND_PIN, 1);
+
 	deepsleep();
 
 	while(1) {
 		if(is_command_received()) {
 			printf("Command: %s\n", get_command());
+
+			int i = 0;
+			while(command[i] != 0) {
+				printf("0x%x %c\n", command[i], command[i]);
+				i++;
+			}
+
 			process_command(get_command());
 		}
 		if(millis() > COMM_DELAY) {
 			
 			deepsleep();
-			uart_print("+WAKEUP\r\n");
+			
 		}
+		printf("STAT: 0x%x CTLR1 0x%x DATA: 0x%x \n", USART1->STATR, USART1->CTLR1, USART1->DATAR);
+		Delay_Ms(500);
+		
 	}
 }
 

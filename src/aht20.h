@@ -94,6 +94,11 @@ uint8_t AHT20_read(AHT20Data *data) {
 		return AHT20_ERR_MEASUREMENT; // Measurement failed
 	}
 	i2c_end_transmisison();
+	
+	// Reset
+	i2c_begin_transmisison(0x38, AHT20_CMD_SOFTRESET);
+	i2c_transmit_data(buf, 3);
+	i2c_end_transmisison();
 
 	// TODO: add CRC check
 
