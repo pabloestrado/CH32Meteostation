@@ -11,7 +11,6 @@
 #include "bmp280.h"
 #include "aht20.h"
 #include "uart.h"
-#include "iwdg.h"
 
 #define millis() (SysTick->CNT / DELAY_MS_TIME)
 
