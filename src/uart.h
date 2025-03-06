@@ -17,8 +17,10 @@ void USART1_IRQHandler(void)
 		//Check is command_recived is not processed by code and ignore future commands
         if (USART1->STATR & (USART_STATR_ORE | USART_STATR_FE | USART_STATR_NE)) {
             // Clear all errors and discart recevided byte, do not trust corrupted data
-            USART1->STATR &= ~(USART_STATR_ORE | USART_STATR_FE | USART_STATR_NE | USART_STATR_RXNE) ;
-        }
+            //USART1->STATR &= ~(USART_STATR_ORE | USART_STATR_FE | USART_STATR_NE | USART_STATR_RXNE) ;
+			//USART1->STATR &= ~(USART_STATR_ORE | USART_STATR_FE | USART_STATR_NE | USART_STATR_RXNE);
+			volatile uint8_t tmp = USART1->DATAR;
+		}
 		else {
 			// Read from the DATAR Register to reset the flag
 			char received = (char)USART1->DATAR;
@@ -50,6 +52,15 @@ void USART1_IRQHandler(void)
 			}
 		}
 	}
+
+	else {
+		// Just to cleanup error flags
+		volatile uint8_t tmp = USART1->DATAR;
+	}
+
+
+	//printf("USARTINT: 0x%x \n", USART1->STATR);
+	//USART1->STATR &= ~(USART_STATR_ORE | USART_STATR_FE | USART_STATR_NE | USART_STATR_LBD | USART_STATR_CTS);
 }
 
 // If command is received with uart
@@ -85,13 +96,15 @@ void uart_init() {
 	// Set the Baudrate, assuming 48KHz
 	USART1->BRR = (FUNCONF_SYSTEM_CORE_CLOCK / (UART_BAUDRATE * 16)) << 4;
 
+	// Cleanup error flags if any
+	USART1->STATR &= ~(USART_STATR_ORE | USART_STATR_FE | USART_STATR_NE | USART_STATR_RXNE | USART_STATR_LBD) ;
 	//USART1->STATR = 0x00;
 	// Enable the UART RXNE Interrupt
     NVIC_EnableIRQ(USART1_IRQn);
 	
 	// Enable the UART
 	USART1->CTLR1 |= USART_CTLR1_UE;
-	printf("INITUART STAT: 0x%x CTLR1 0x%x\n", USART1->STATR, USART1->CTLR1);
+	//printf("INITUART STAT: 0x%x CTLR1 0x%x\n", USART1->STATR, USART1->CTLR1);
 }
 
 void uart_send(uint8_t *data, uint16_t length) {
@@ -126,4 +139,6 @@ void uart_deinit() {
 
     // Disable the UART clock
     RCC->APB2PCENR &= ~RCC_APB2Periph_USART1;  // Disable the UART1 clock
+
+	USART1->STATR = 0x0000;
 }

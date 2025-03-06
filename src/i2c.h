@@ -28,7 +28,7 @@
 // I2C Configuration
 // I2C Configuration Defaults
 
-#define I2C_DEBUG    // uncomment to echo all I2C traffic to printf
+//#define I2C_DEBUG    // uncomment to echo all I2C traffic to printf
 
 // Default AFIO Register Value
 #define I2C_AFIO_REG     ((uint32_t)0x00000000)  // Default AFIO configuration (no remapping)
